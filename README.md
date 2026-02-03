@@ -33,24 +33,24 @@ git clone https://github.com/nikanesiad/X-years-ahead-performance
 cd streamlit_yfinance_dashboard
 ```
 2. Create a virtual environment (optional but recommended):
-
+```bash
 python -m venv .venv
 # mac/linux
 source .venv/bin/activate
 # windows (PowerShell)
 .venv\Scripts\activate
-
+```
 3. Install dependencies:
-
+```bash
 pip install --upgrade pip
 pip install streamlit yfinance pandas numpy plotly
-
+```
 ## Usage
 
 Run the app locally:
-
+```bash
 streamlit run streamlit_yfinance_dashboard.py
-
+```
 Select tickers or presets.
 
 Choose a date range and X-year forward return.
