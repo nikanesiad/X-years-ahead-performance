@@ -15,6 +15,30 @@ import numpy as np
 from datetime import datetime
 import plotly.graph_objects as go
 
+TICKER_LABELS = {
+    "^GSPC": "USA – S&P 500",
+    "^GSPTSE": "Canada – TSX",
+    "^FCHI": "France – CAC 40",
+    "^N225": "Japan – Nikkei 225",
+    "^FTSE": "UK – FTSE 100",
+    "^GDAXI": "Germany – DAX",
+
+    "GC=F": "Gold",
+    "SI=F": "Silver",
+    "CL=F": "Crude oil",
+
+    "IEF": "US bonds – 7–10y Treasuries",
+    "TLT": "US bonds – 20+ year Treasuries",
+    "BND": "US bonds – Total bond market",
+}
+
+MARKET_PRESETS = {
+    "Custom (manual input)": "",
+    "Global equity markets": "^GSPC,^GSPTSE,^FCHI,^N225,^FTSE,^GDAXI",
+    "SP500 vs commodities": "^GSPC,GC=F,SI=F,CL=F",
+    "SP500 vs bonds": "^GSPC,IEF,TLT,BND",
+}
+
 # ----------------------------- Utilities -----------------------------
 @st.cache_data(ttl=3600)
 def download_data(tickers, start, end, interval='1d'):
@@ -99,9 +123,9 @@ st.markdown(
     **What this app does**
 
     - Pulls historical adjusted prices from Yahoo Finance using `yfinance`.
-    - Top panel: interactive time series (zoom, pan, range slider) with dropdown to toggle linear/log y-axis.
-    - Second panel: computes *X-year ahead* performance (for integer X between 1 and 20) and shows the time series of those forward returns.
-
+    - Top panel: computes *X-year ahead* performance (for integer X between 1 and 20) and shows the time series of those forward returns.
+    - Bottom panel: interactive time series (zoom, pan, range slider) with dropdown to toggle linear/log y-axis.
+    
     **How to use**: enter tickers separated by commas (example: `AAPL, MSFT, GOOG`) and choose the date range and parameters.
     """
 )
@@ -114,12 +138,26 @@ default_end = (now - pd.DateOffset(years=0)).date()
 with st.expander('Data & view settings', expanded=True):
     col1, col2 = st.columns(2)
     with col1:
-        user_tickers = st.text_input('Top subplot tickers (comma separated)', value='^GSPC')
+        # second_tickers = st.text_input('Top subplot tickers (comma separated)', value='^GSPC, ^IXIC')
+        preset_choice = st.selectbox(
+            "Top subplot preset",
+            options=list(MARKET_PRESETS.keys()),
+            index=1  # default: Global equity markets
+        )
+        
+        second_tickers = st.text_input(
+            "Top subplot tickers (comma separated)",
+            value=(
+                MARKET_PRESETS[preset_choice]
+                if MARKET_PRESETS[preset_choice]
+                else "^GSPC,^IXIC"
+            )
+        )
         start_date = st.date_input('Start date', value=default_start)
-        end_date = st.date_input('End date', value=default_end)
-    with col2:
-        second_tickers = st.text_input('Second subplot tickers (comma separated)', value='^GSPC, ^IXIC')
         x_years = st.slider('X — years ahead for performance', min_value=1, max_value=20, value=5)
+    with col2:
+        user_tickers = st.text_input('Bottom subplot tickers (comma separated)', value='^GSPC')
+        end_date = st.date_input('End date', value=default_end)
 
 # Download data
 st.write('Downloading data...')
@@ -130,42 +168,8 @@ except Exception as e:
     st.error(f'Error downloading data: {e}')
     st.stop()
 
-# First plot
-st.subheader('Top plot — Price series with linear/log toggle')
-st.markdown("""
-This plot shows historical price series for the selected tickers.
-Use the dropdown in the top-right of the chart to switch between linear and logarithmic y-axis.
-You can also zoom, pan, and adjust the range slider at the bottom.
-""")
-if df_top.empty:
-    st.warning('No data found for the top tickers. Check ticker symbols and date range.')
-else:
-    # Use the earliest available data
-    plot_start = df_top.index.min()
-    fig = go.Figure()
-    for t in df_top.columns:
-        s = df_top[t].dropna()
-        fig.add_trace(go.Scatter(x=s.index, y=s.values, mode='lines', name=t))
-
-    fig.update_layout(
-        title="Price series",
-        xaxis=dict(rangeslider=dict(visible=True), range=[plot_start, df_top.index.max()]),
-        updatemenus=[
-            dict(
-                type="buttons",
-                x=1.05, y=1,
-                buttons=[
-                    dict(label="Linear", method="relayout", args=[{"yaxis.type": "linear"}]),
-                    dict(label="Log", method="relayout", args=[{"yaxis.type": "log"}])
-                ]
-            )
-        ],
-        height=1000  # Adjust top plot height
-    )
-    st.plotly_chart(fig, use_container_width=True, height=500)
-
-# Second plot: X-year ahead performance
-st.subheader('Second plot — X-year ahead performance (time series)')
+# First plot: X-year ahead performance
+st.subheader('X-year ahead performance (time series)')
 st.markdown(f"""
 This plot shows {x_years}-year ahead returns for the selected tickers.
 Returns are calculated as (Price at t+{x_years} years / Price at t - 1) * 100.
@@ -188,15 +192,87 @@ else:
         fig2 = go.Figure()
         for t in forward_df.columns:
             s = forward_df[t].dropna()
-            fig2.add_trace(go.Scatter(x=s.index, y=s.values*100, mode='lines', name=t))
+        
+            label = TICKER_LABELS.get(t, t)  # fallback to ticker if missing
+        
+            fig2.add_trace(
+                go.Scatter(
+                    x=s.index,
+                    y=s.values * 100,
+                    mode='lines',
+                    name=label,
+                    hovertemplate=(
+                        f"{label}<br>"
+                        "Date: %{x}<br>"
+                        f"{x_years}-year return: %{{y:.2f}}%"
+                        "<extra></extra>"
+                    ),
+                )
+            )
 
         fig2.update_layout(
             title=f"{x_years}-year ahead returns",
-            yaxis_title=f"Return after {x_years} years (%)",
-            xaxis=dict(rangeslider=dict(visible=True), range=[plot_start, forward_df.index.max()]),
-            height=1000  # Adjust second plot height
+            yaxis=dict(
+                title=f"Return after {x_years} years (%)",
+                autorange=True,
+                fixedrange=False
+            ),
+            xaxis=dict(
+                rangeslider=dict(visible=True),
+                range=[plot_start, forward_df.index.max()]
+            ),
+            height=1000
         )
+        
+        # 🔑 THIS LINE IS IMPORTANT
+        fig2.update_yaxes(autorange=True)
         st.plotly_chart(fig2, use_container_width=True, height=500)
+
+# Second plot
+st.subheader('Price series with linear/log toggle')
+st.markdown("""
+This plot shows historical price series for the selected tickers.
+Use the dropdown in the top-right of the chart to switch between linear and logarithmic y-axis.
+You can also zoom, pan, and adjust the range slider at the bottom.
+""")
+if df_top.empty:
+    st.warning('No data found for the top tickers. Check ticker symbols and date range.')
+else:
+    # Use the earliest available data
+    plot_start = df_top.index.min()
+    fig = go.Figure()
+    for t in df_top.columns:
+        s = df_top[t].dropna()
+        fig.add_trace(go.Scatter(x=s.index, y=s.values, mode='lines', name=t))
+
+    fig.update_layout(
+        title="Price series",
+        xaxis=dict(
+            rangeslider=dict(visible=True),
+            range=[plot_start, df_top.index.max()]
+        ),
+        yaxis=dict(
+            autorange=True,
+            fixedrange=False
+        ),
+        updatemenus=[
+            dict(
+                type="buttons",
+                x=1.05, y=1,
+                buttons=[
+                    dict(label="Linear", method="relayout", args=[{"yaxis.type": "linear"}]),
+                    dict(label="Log", method="relayout", args=[{"yaxis.type": "log"}])
+                ]
+            )
+        ],
+        height=1000
+    )
+    
+    # 🔑 Force autoscale on interaction
+    fig.update_yaxes(autorange=True)
+    st.plotly_chart(fig, use_container_width=True, height=500)
+
+
 
 # st.markdown('---')
 # st.markdown('**Developer notes**: This app uses `st.cache_data` for downloaded price data to speed up development. When deploying, consider longer cache TTL or a more robust caching/storage for production.')
