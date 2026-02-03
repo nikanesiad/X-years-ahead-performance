@@ -31,7 +31,7 @@ This is a Streamlit app that allows you to visualize historical stock, index, co
 ```bash
 git clone https://github.com/nikanesiad/X-years-ahead-performance
 cd streamlit_yfinance_dashboard
-
+```
 2. Create a virtual environment (optional but recommended):
 
 python -m venv .venv
